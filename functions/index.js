@@ -293,11 +293,12 @@ exports.askAI = onCall({
 /**
  * Scheduled function to clean up old classrooms.
  * Runs every day at 2:00 AM Israel time.
+ * NOTE: Uses europe-west1 because Cloud Scheduler is not available in me-west1
  */
 exports.cleanupOldClassrooms = onSchedule({
   schedule: "0 2 * * *",
   timeZone: "Asia/Jerusalem",
-  region: "me-west1"
+  region: "europe-west1"  // Changed from me-west1 due to Cloud Scheduler limitations
 }, async (event) => {
   const db = admin.firestore();
 
