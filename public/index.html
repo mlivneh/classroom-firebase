@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>לוח בקרה למורה - ClassroomSDK</title>
+    <!-- הקישור ל-CSS -->
+    <link rel="stylesheet" href="css/teacher-dashboard.css">
+</head>
+<body>
+    <!-- Header with Professional Navigation -->
+    <header class="header">
+        <div class="nav-container">
+            <div class="logo">
+                📚 <span>לוח בקרה למורה</span>
+            </div>
+            
+            <nav>
+                <ul class="nav-menu">
+                    <!-- פעולות מהירות -->
+                    <li class="nav-item">
+                        <a href="#" class="nav-link">
+                            <span class="nav-icon">⚡</span>
+                            <span>פעולות מהירות</span>
+                        </a>
+                        <div class="dropdown">
+                            <div class="dropdown-header">פעולות מהירות לניהול השיעור</div>
+                            <a href="#" class="dropdown-item success-item" onclick="sendQuickMessage('בואו נתחיל שיעור!')">
+                                <span class="dropdown-icon">🎓</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">התחל שיעור</div>
+                                    <div class="dropdown-desc">שלח הודעה לכל התלמידים</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item warning-item" onclick="sendQuickMessage('זמן להפסקה! חזרו בעוד 5 דקות.')">
+                                <span class="dropdown-icon">☕</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">הפסקה</div>
+                                    <div class="dropdown-desc">הודע על הפסקה</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item" onclick="sendQuickMessage('השיעור הסתיים. כל הכבוד!')">
+                                <span class="dropdown-icon">✅</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">סיום שיעור</div>
+                                    <div class="dropdown-desc">סיים את השיעור</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item danger-item" onclick="resetClassroomData()">
+                                <span class="dropdown-icon">🔄</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">שיעור חדש</div>
+                                    <div class="dropdown-desc">נקה את כל נתוני השיעור</div>
+                                </div>
+                            </a>
+                        </div>
+                    </li>
+
+                    <!-- משחקים ותוכן -->
+                    <li class="nav-item">
+                        <a href="#" class="nav-link">
+                            <span class="nav-icon">🎮</span>
+                            <span>משחקים ותוכן</span>
+                        </a>
+                        <div class="dropdown">
+                            <div class="dropdown-header">שלח משחקים וחומרי לימוד</div>
+                            <div style="padding: 10px 20px; border-bottom: 1px solid #f8f9fa;">
+                                <input type="text" id="customUrl" placeholder="הכנס כתובת מותאמת..." 
+                                       style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                                <button onclick="sendCustomContent()" 
+                                        style="width: 100%; margin-top: 8px; padding: 8px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                                    📤 שלח תוכן מותאם
+                                </button>
+                            </div>
+                            <a href="#" class="dropdown-item" onclick="sendGameContent('https://kahoot.it')">
+                                <span class="dropdown-icon">🎯</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">Kahoot</div>
+                                    <div class="dropdown-desc">חידון אינטראקטיבי</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item" onclick="sendGameContent('https://wordwall.net')">
+                                <span class="dropdown-icon">🎲</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">Wordwall</div>
+                                    <div class="dropdown-desc">משחקי מילים</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item" onclick="sendGameContent('https://scratch.mit.edu')">
+                                <span class="dropdown-icon">🐱</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">Scratch</div>
+                                    <div class="dropdown-desc">תכנות ויצירה</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item danger-item" onclick="sendGameContent('about:blank')">
+                                <span class="dropdown-icon">⏹️</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">עצור תוכן</div>
+                                    <div class="dropdown-desc">נקה את המסכים</div>
+                                </div>
+                            </a>
+                        </div>
+                    </li>
+
+                    <!-- ניהול AI -->
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" id="aiMenuLink">
+                            <span class="nav-icon">🤖</span>
+                            <span>ניהול AI</span>
+                        </a>
+                        <div class="dropdown">
+                            <div class="dropdown-header">הגדרות עוזר AI לתלמידים</div>
+                            <a href="#" class="dropdown-item" id="toggleAI" onclick="toggleAIForClass()">
+                                <span class="dropdown-icon" id="aiStatusIcon">🔴</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title" id="aiStatusText">הפעל AI</div>
+                                    <div class="dropdown-desc">אפשר לתלמידים לשאול את העוזר</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item" onclick="testAIService()">
+                                <span class="dropdown-icon">🔍</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">בדוק מצב AI</div>
+                                    <div class="dropdown-desc">בדוק אם שירות ה-AI זמין</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item" onclick="sendQuickMessage('העוזר AI זמין עכשיו לשאלות!')">
+                                <span class="dropdown-icon">📢</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">הודע על AI</div>
+                                    <div class="dropdown-desc">יידע תלמידים שהAI פעיל</div>
+                                </div>
+                            </a>
+                        </div>
+                    </li>
+
+                    <!-- כלים -->
+                    <li class="nav-item">
+                        <a href="#" class="nav-link">
+                            <span class="nav-icon">🔧</span>
+                            <span>כלים</span>
+                        </a>
+                        <div class="dropdown">
+                            <div class="dropdown-header">כלי עזר וניפוי שגיאות</div>
+                            <a href="#" class="dropdown-item" onclick="toggleDebug()">
+                                <span class="dropdown-icon">🐛</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">Debug Console</div>
+                                    <div class="dropdown-desc">הצג מידע טכני</div>
+                                </div>
+                            </a>
+                            <a href="#" class="dropdown-item" onclick="exportData()">
+                                <span class="dropdown-icon">📊</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-title">ייצא נתונים</div>
+                                    <div class="dropdown-desc">שמור רשימת תלמידים והודעות</div>
+                                </div>
+                            </a>
+                        </div>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="status-indicator" id="connectionStatus">
+                <div class="status-dot"></div>
+                <span>מתחבר...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Classroom ID Section -->
+        <div class="section room-code-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; padding: 20px; margin-bottom: 20px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h2 style="margin: 0 0 10px 0; font-size: 18px;">🏫 קוד החדר שלך</h2>
+            <div id="roomCode" style="font-size: 32px; font-weight: bold; margin: 10px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); letter-spacing: 3px;">
+                ...
+            </div>
+            <p style="margin: 5px 0; font-size: 14px; opacity: 0.9;">תן את הקוד הזה לתלמידים כדי שיוכלו להתחבר לשיעור</p>
+            
+            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
+                <button id="copyClassroomIdBtn" onclick="copyClassroomId()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
+                    📋 העתק קוד
+                </button>
+            </div>
+        </div>
+
+        <!-- Students Section -->
+        <div class="section">
+            <h2>👥 תלמידים מחוברים (<span id="studentsCount">0</span>)</h2>
+            <div id="studentsList" class="students-list">
+                <div class="no-students">אין תלמידים מחוברים כרגע</div>
+            </div>
+        </div>
+
+        <!-- Chat Section -->
+        <div class="section">
+            <h2>💬 תקשורת עם התלמידים</h2>
+            <div id="messagesArea" class="chat-messages">
+                <div class="no-messages">אין הודעות עדיין</div>
+            </div>
+            <div class="chat-input">
+                <textarea id="messageInput" placeholder="כתוב הודעה לתלמידים..." rows="2"></textarea>
+                <button id="sendMessageBtn" onclick="sendMessage()">📤 שלח</button>
+            </div>
+        </div>
+
+        <!-- Activity Section -->
+        <div class="section">
+            <h2>📊 פעילות אחרונה</h2>
+            <div id="activitiesArea" class="activity-log">
+                <div class="no-activity">אין פעילות עדיין</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Templates -->
+    <template id="studentTemplate">
+        <div class="student-item">
+            <div class="student-info">
+                <span class="student-name"></span>
+                <div class="student-actions"></div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Private Message Modal -->
+    <div id="privateMessageModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>✉️ הודעה פרטית</h3>
+                <button class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <p>שולח הודעה פרטית ל: <span id="privateMessageRecipient"></span></p>
+                <textarea id="privateMessageText" placeholder="כתוב את ההודעה הפרטית..." rows="4"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-close">ביטול</button>
+                <button onclick="sendPrivateMessage()" class="primary">שלח הודעה</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal -->
+    <div id="messageModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>💬 שלח הודעה לכיתה</h3>
+                <button class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="messageForm">
+                    <textarea id="messageText" placeholder="כתוב הודעה לכל התלמידים..." rows="4" required></textarea>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-close">ביטול</button>
+                <button type="submit" form="messageForm" class="primary">שלח הודעה</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Content Modal -->
+    <div id="customContentModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📤 שלח תוכן מותאם</h3>
+                <button class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="customContentForm">
+                    <input type="url" id="customUrl" placeholder="הכנס כתובת URL..." required>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-close">ביטול</button>
+                <button type="submit" form="customContentForm" class="primary">שלח תוכן</button>
+            </div>
+        </div>
+    </div>
+
+<!-- Scripts -->
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-functions-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script>
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const functions = firebase.functions();
+        
+        window.addEventListener('load', () => {
+            window.teacherDashboard = new TeacherDashboard();
+            window.teacherDashboard.init();
+        });
+        
+        function sendQuickMessage(message) {
+            if (window.teacherDashboard) window.teacherDashboard.sendMessageToClass(message);
+        }
+
+        function testAIService() {
+            if (window.teacherDashboard) window.teacherDashboard.testAIService();
+        }
+
+        function sendPrivateMessage() {
+            if (window.teacherDashboard) window.teacherDashboard.sendPrivateMessage();
+        }
+
+        function copyClassroomId() {
+            const classroomIdDisplay = document.getElementById('roomCode');
+            if (classroomIdDisplay && classroomIdDisplay.textContent !== '...') {
+                navigator.clipboard.writeText(classroomIdDisplay.textContent).then(() => {
+                    const copyBtn = document.getElementById('copyClassroomIdBtn');
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = '✅ הועתק!';
+                    copyBtn.style.background = 'rgba(76, 175, 80, 0.3)';
+                    
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalText;
+                        copyBtn.style.background = 'rgba(255,255,255,0.2)';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy: ', err);
+                    alert('שגיאה בהעתקה. נסה שוב.');
+                });
+            }
+        }
+    </script>
+    <script src="js/ClassroomSDK.js"></script>
+    <script src="js/teacher-dashboard.js"></script>
+</body>
+</html>

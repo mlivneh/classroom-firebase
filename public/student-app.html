@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מרחב למידה לתלמיד</title>
+    <link rel="stylesheet" href="css/student-app.css">
+</head>
+<body>
+    <div id="login-container" class="container">
+        <div class="login-box">
+            <h1>✏️ מרחב הלמידה הכיתתי</h1>
+            <p>כדי להצטרף לשיעור, אנא הקלד/י את שמך וקוד החדר</p>
+            <form id="login-form">
+                <input type="text" id="player-name" placeholder="השם שלך" required>
+                <div class="input-group">
+                    <label for="teacher-uid">🏫 קוד החדר:</label>
+                    <input type="text" id="teacher-uid" placeholder="הזן קוד חדר 4 ספרות" maxlength="4" required>
+                </div>
+                <button type="submit">הצטרף לשיעור</button>
+            </form>
+        </div>
+    </div>
+
+    <main id="main-container" style="display: none;">
+        <iframe id="content-frame" src="about:blank" title="תוכן השיעור"></iframe>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.7/firebase-functions-compat.js"></script>
+
+    <script src="firebase-config.js"></script>
+
+    <script>
+      // Initialize the Firebase app using your configuration
+      firebase.initializeApp(firebaseConfig);
+
+      // Create global references to the services we will use
+      const db = firebase.firestore();
+      const auth = firebase.auth();
+      const functions = firebase.functions();
+    </script>
+
+    <script src="js/ClassroomSDK.js"></script>
+    <script src="js/student-app.js"></script>
+</body>
+</html>
