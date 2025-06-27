@@ -5,7 +5,7 @@ class ClassroomSDK {
         try {
             this.db = firebase.firestore();
             this.auth = firebase.auth();
-            this.functions = firebase.functions();
+            this.functions = firebase.app().functions('me-west1');
             console.log('✅ Firebase services initialized in constructor.');
         } catch (e) {
             console.error("❌ CRITICAL: Could not initialize Firebase services.", e);
