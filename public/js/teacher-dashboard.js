@@ -1,9 +1,12 @@
+// teacher-dashboard.js - עם תפריט בחירת AI מתקדם
+
 class TeacherDashboard {
     constructor() {
         this.sdk = null;
         this.students = [];
         this.activities = [];
         this.isAiActive = false; // Track AI status
+        this.currentAiModel = 'chatgpt'; // ברירת מחדל ChatGPT
         this.aiWarningShown = false; // למנוע הודעות חוזרות
         
         // 🔧 תיקון עיברית - הגדרת locale
@@ -119,7 +122,7 @@ class TeacherDashboard {
 
     // 🆕 פונקציה להצגת כפתור AI למורה
     showTeacherAIButton() {
-        const aiBtn = document.getElementById('openAiSetupBtn');
+        const aiBtn = document.getElementById('openAiSetupBtn') || document.getElementById('toggleAI');
         if (aiBtn) {
             aiBtn.style.display = 'block';
             aiBtn.style.opacity = '1';
@@ -145,7 +148,7 @@ class TeacherDashboard {
         }
     }
 
-    // Check current AI status from Firestore
+    // בדיקת סטטוס AI וקריאת המודל הנוכחי
     async checkAIStatus() {
         if (!this.sdk || !this.sdk.db) {
             this.debugLog("❌ לא ניתן לבדוק סטטוס AI - SDK/DB לא מוכן");
@@ -159,9 +162,12 @@ class TeacherDashboard {
             if (doc.exists) {
                 const roomData = doc.data();
                 this.isAiActive = roomData.settings?.ai_active === true;
-                this.updateAIButton();
+                this.currentAiModel = roomData.settings?.ai_model || 'chatgpt';
                 
-                this.debugLog(`🤖 סטטוס AI נבדק: ${this.isAiActive ? 'פעיל' : 'כבוי'}`);
+                this.updateAIButton();
+                this.updateAIModelDisplay();
+                
+                this.debugLog(`🤖 סטטוס AI: ${this.isAiActive ? 'פעיל' : 'כבוי'}, מודל: ${this.currentAiModel}`);
             } else {
                 this.debugLog("⚠️ מסמך החדר לא נמצא לבדיקת סטטוס AI");
             }
@@ -171,46 +177,178 @@ class TeacherDashboard {
         }
     }
 
-    // Update AI button appearance
+    // עדכון תצוגת כפתור AI
     updateAIButton() {
-        const aiBtn = document.getElementById('openAiSetupBtn');
+        // נסה את שני הכפתורים
+        const aiBtn = document.getElementById('toggleAI') || document.getElementById('openAiSetupBtn');
         if (aiBtn) {
-            const icon = aiBtn.querySelector('.tool-icon');
-            const label = aiBtn.querySelector('.tool-label');
-            const desc = aiBtn.querySelector('.tool-desc');
+            const icon = aiBtn.querySelector('.dropdown-icon') || aiBtn.querySelector('.tool-icon');
+            const title = aiBtn.querySelector('.dropdown-title') || aiBtn.querySelector('.tool-label');
+            const desc = aiBtn.querySelector('.dropdown-desc') || aiBtn.querySelector('.tool-desc');
             
             if (this.isAiActive) {
-                icon.textContent = '🤖';
-                label.textContent = 'AI פעיל';
-                desc.textContent = 'לחץ לכיבוי AI';
+                if (icon) icon.textContent = '🤖';
+                if (title) title.textContent = 'AI פעיל';
+                if (desc) desc.textContent = `מודל נוכחי: ${this.getModelDisplayName(this.currentAiModel)}`;
                 aiBtn.style.background = 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)';
             } else {
-                icon.textContent = '🔴';
-                label.textContent = 'AI כבוי';
-                desc.textContent = 'לחץ להפעלת AI';
+                if (icon) icon.textContent = '🔴';
+                if (title) title.textContent = 'AI כבוי';
+                if (desc) desc.textContent = 'לחץ להפעלת AI';
                 aiBtn.style.background = 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)';
             }
         }
     }
 
-    // 🔧 עדכון testAIService - לוגיקה משופרת
-    async testAIService() {
-    // בדיקה מקיפה של כל הרכיבים הנדרשים
-    if (!this.sdk) {
-        this.debugLog("❌ SDK לא זמין לבדיקת AI");
-        return false;
-    }
-    
-    if (!this.sdk.auth?.currentUser) {
-        this.debugLog("❌ משתמש לא מאומת לבדיקת AI");
-        return false;
-    }
-    
-    if (!this.sdk.functions) {
-        this.debugLog("❌ Firebase Functions לא מאותחל");
-        return false;
-    }
+    // עדכון תצוגת המודל הנוכחי
+    updateAIModelDisplay() {
+        // עדכון כל המקומות שמציגים את המודל הנוכחי
+        const modelDisplays = document.querySelectorAll('.current-ai-model');
+        modelDisplays.forEach(display => {
+            display.textContent = this.getModelDisplayName(this.currentAiModel);
+        });
         
+        // עדכון כפתורי המודלים - סימון הפעיל
+        const modelButtons = document.querySelectorAll('.ai-model-btn');
+        modelButtons.forEach(btn => {
+            if (btn.dataset.model === this.currentAiModel) {
+                btn.classList.add('active');
+                btn.style.background = 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)';
+            } else {
+                btn.classList.remove('active');
+                btn.style.background = '';
+            }
+        });
+    }
+
+    // קבלת שם תצוגה למודל
+    getModelDisplayName(model) {
+        const modelNames = {
+            'chatgpt': 'ChatGPT',
+            'claude': 'Claude',
+            'gemini': 'Gemini'
+        };
+        return modelNames[model] || model;
+    }
+
+    // החלפת מצב AI (הפעלה/כיבוי)
+    async toggleAIForClass() {
+        if (!this.sdk) return;
+        
+        this.debugLog("🔄 מחליף מצב AI לכיתה...");
+        
+        try {
+            // בדיקת זמינות AI לפני החלפה
+            const aiAvailable = await this.testAIService();
+            if (!aiAvailable && !this.isAiActive) {
+                alert("⚠️ שירות ה-AI לא זמין כרגע. לא ניתן להפעיל.");
+                return;
+            }
+            
+            const newStatus = await this.sdk.toggleAI();
+            this.isAiActive = newStatus;
+            this.updateAIButton();
+            
+            if (newStatus) {
+                this.addActivity(`🤖 AI הופעל לכיתה - מודל: ${this.getModelDisplayName(this.currentAiModel)}`);
+                this.debugLog("✅ AI הופעל עבור הכיתה");
+                this.showAIActivationMessage();
+            } else {
+                this.addActivity('🔴 AI כובה לכיתה - התלמידים לא יכולים להשתמש');
+                this.debugLog("🔴 AI כובה עבור הכיתה");
+            }
+            
+        } catch (error) {
+            console.error("🔥 שגיאה בהחלפת מצב AI:", error);
+            this.debugLog("❌ החלפת AI נכשלה", error);
+            alert("שגיאה בהחלפת מצב ה-AI: " + error.message);
+        }
+    }
+
+    // החלפת מודל AI (בלי לכבות/להדליק)
+    async switchAIModel(model) {
+        if (!this.sdk) return;
+        
+        this.debugLog(`🔄 מחליף מודל AI ל: ${model}`);
+        
+        try {
+            const roomRef = this.sdk.db.collection('rooms').doc(this.sdk.getRoomCode());
+            await roomRef.update({
+                'settings.ai_model': model,
+                'last_activity': firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            this.currentAiModel = model;
+            this.updateAIButton();
+            this.updateAIModelDisplay();
+            
+            const modelName = this.getModelDisplayName(model);
+            this.addActivity(`🔄 מודל AI הוחלף ל: ${modelName}`);
+            this.debugLog(`✅ מודל AI הוחלף ל: ${model}`);
+            
+            // הודעה לתלמידים
+            if (this.isAiActive) {
+                this.showModelSwitchMessage(modelName);
+            }
+            
+        } catch (error) {
+            console.error("🔥 שגיאה בהחלפת מודל AI:", error);
+            this.debugLog("❌ החלפת מודל AI נכשלה", error);
+            alert("שגיאה בהחלפת מודל ה-AI: " + error.message);
+        }
+    }
+
+    // הודעת החלפת מודל
+    showModelSwitchMessage(modelName) {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed; top: 20px; right: 20px; z-index: 10000;
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            color: white; padding: 15px 20px; border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+            font-weight: bold; max-width: 300px;
+            animation: slideInRight 0.5s ease;
+            direction: rtl; text-align: right;
+        `;
+        
+        notification.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 24px;">🔄</span>
+                <div>
+                    <div>מודל AI הוחלף!</div>
+                    <div style="font-size: 12px; opacity: 0.9; margin-top: 5px;">
+                        עכשיו עובדים עם: ${modelName}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.animation = 'slideOutRight 0.5s ease';
+            setTimeout(() => notification.remove(), 500);
+        }, 3000);
+    }
+
+    // בדיקת שירות AI - מעודכן לעבוד עם askAI
+    async testAIService() {
+        // בדיקה מקיפה של כל הרכיבים הנדרשים
+        if (!this.sdk) {
+            this.debugLog("❌ SDK לא זמין לבדיקת AI");
+            return false;
+        }
+        
+        if (!this.sdk.auth?.currentUser) {
+            this.debugLog("❌ משתמש לא מאומת לבדיקת AI");
+            return false;
+        }
+        
+        if (!this.sdk.functions) {
+            this.debugLog("❌ Firebase Functions לא מאותחל");
+            return false;
+        }
+            
         this.debugLog("🔍 בודק זמינות שירות AI...");
         
         try {
@@ -430,42 +568,6 @@ class TeacherDashboard {
         }
     }
 
-    // 🔧 עדכון toggleAIForClass - שיפורים למורה
-    async toggleAIForClass() {
-        if (!this.sdk) return;
-        
-        this.debugLog("🔄 מחליף מצב AI לכיתה...");
-        
-        try {
-            // בדיקת זמינות AI לפני החלפה
-            const aiAvailable = await this.testAIService();
-            if (!aiAvailable && !this.isAiActive) {
-                alert("⚠️ שירות ה-AI לא זמין כרגע. לא ניתן להפעיל.");
-                return;
-            }
-            
-            const newStatus = await this.sdk.toggleAI();
-            this.isAiActive = newStatus;
-            this.updateAIButton();
-            
-            if (newStatus) {
-                this.addActivity('🤖 AI הופעל לכיתה - התלמידים יכולים להשתמש');
-                this.debugLog("✅ AI הופעל עבור הכיתה");
-                
-                // הצג הודעה מעודדת
-                this.showAIActivationMessage();
-            } else {
-                this.addActivity('🔴 AI כובה לכיתה - התלמידים לא יכולים להשתמש');
-                this.debugLog("🔴 AI כובה עבור הכיתה");
-            }
-            
-        } catch (error) {
-            console.error("🔥 שגיאה בהחלפת מצב AI:", error);
-            this.debugLog("❌ החלפת AI נכשלה", error);
-            alert("שגיאה בהחלפת מצב ה-AI: " + error.message);
-        }
-    }
-
     // 🆕 הודעת עידוד להפעלת AI עם תמיכה בעיברית
     showAIActivationMessage() {
         const notification = document.createElement('div');
@@ -538,11 +640,22 @@ class TeacherDashboard {
             });
         });
 
-        // AI toggle
-        const aiBtn = document.getElementById('openAiSetupBtn');
+        // AI toggle (מבלי להחליף מודל)
+        const aiBtn = document.getElementById('toggleAI') || document.getElementById('openAiSetupBtn');
         if (aiBtn) {
             aiBtn.addEventListener('click', () => this.toggleAIForClass());
         }
+
+        // AI model switches (החלפת מודל)
+        const modelButtons = document.querySelectorAll('.ai-model-btn');
+        modelButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const model = btn.dataset.model;
+                if (model && model !== this.currentAiModel) {
+                    this.switchAIModel(model);
+                }
+            });
+        });
 
         // Reset classroom
         const resetBtn = document.getElementById('resetClassroomBtn');
@@ -676,9 +789,16 @@ function sendCustomContent() {
     document.getElementById('customContentModal').classList.add('visible');
 }
 
+// Global functions - מעודכנות
 function toggleAIForClass() {
     if (window.teacherDashboard) {
         window.teacherDashboard.toggleAIForClass();
+    }
+}
+
+function switchAIModel(model) {
+    if (window.teacherDashboard) {
+        window.teacherDashboard.switchAIModel(model);
     }
 }
 
@@ -820,10 +940,10 @@ function debugClassroom() {
         'חדר': window.teacherDashboard.sdk?.getRoomCode(),
         'תלמידים': window.teacherDashboard.students.length,
         'AI פעיל': window.teacherDashboard.isAiActive,
+        'מודל AI': window.teacherDashboard.currentAiModel,
         'SDK מחובר': !!window.teacherDashboard.sdk,
         'זמן אתחול': new Date().toLocaleTimeString('he-IL')
     };
     
     console.table(debug);
     return debug;
-}

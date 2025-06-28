@@ -795,3 +795,18 @@ body {
     grid-column: 1 / -1;
     margin-bottom: 20px;
 }
+/* סגנונות מיוחדים לכפתורי מודל AI */
+.ai-model-btn.active {
+    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%) !important;
+    color: white !important;
+}
+
+.ai-model-btn.active .dropdown-title,
+.ai-model-btn.active .dropdown-desc {
+    color: white !important;
+}
+
+.current-ai-model {
+    font-weight: bold;
+    color: #4CAF50;
+}

@@ -1,23 +1,32 @@
-// functions/index.js - COMPLETE FIXED VERSION
+// functions/index.js - askAI כפונקציה מרכזית שקוראת להגדרות החדר
 
 const {onCall} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {HttpsError} = require("firebase-functions/v2/https");
+const {defineSecret} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const https = require("https");
 
-// Initialize Firebase Admin SDK if it hasn't been already
+// Initialize Firebase Admin SDK
 if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 
+const DEPLOY_REGION = "europe-west1";
+
+// Define secrets
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
+const claudeApiKey = defineSecret("CLAUDE_API_KEY");
+const openaiApiKey = defineSecret("OPENAI_API_KEY");
+
 /**
- * Callable Cloud Function to get a response from Gemini AI.
+ * פונקציה מרכזית לכל קריאות AI - קוראת להגדרות החדר ומחליטה איזה מודל להפעיל
  */
-exports.askGemini = onCall({
-  region: "me-west1"
+exports.askAI = onCall({
+  region: DEPLOY_REGION,
+  secrets: [geminiApiKey, claudeApiKey, openaiApiKey]
 }, async (request) => {
-  console.log("🔍 askGemini called with:", request.data);
+  console.log("🎯 askAI called with:", request.data);
   
   if (!request.auth) {
     console.error("❌ No authentication provided");
@@ -25,100 +34,154 @@ exports.askGemini = onCall({
   }
 
   const prompt = request.data.prompt;
+  const roomCode = request.data.roomCode;
+  
   if (!prompt) {
     console.error("❌ No prompt provided");
     throw new HttpsError("invalid-argument", "Prompt is required");
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error("❌ Gemini API key not found");
-    throw new HttpsError("failed-precondition", "Gemini API key not configured");
+  if (!roomCode) {
+    console.error("❌ No room code provided");
+    throw new HttpsError("invalid-argument", "Room code is required");
   }
 
-  console.log("✅ Gemini API key found, making request...");
+  try {
+    // קריאה להגדרות החדר לקבלת המודל הנבחר
+    const roomRef = admin.firestore().collection('rooms').doc(roomCode);
+    const roomDoc = await roomRef.get();
+    
+    if (!roomDoc.exists) {
+      console.error("❌ Room not found:", roomCode);
+      throw new HttpsError("not-found", "Room not found");
+    }
+    
+    const roomData = roomDoc.data();
+    const selectedModel = roomData.settings?.ai_model || 'chatgpt'; // ברירת מחדל ChatGPT
+    const aiActive = roomData.settings?.ai_active === true;
+    
+    if (!aiActive) {
+      console.log("🔴 AI is disabled for this room");
+      throw new HttpsError("failed-precondition", "AI is disabled for this classroom");
+    }
+    
+    console.log(`🎯 Room ${roomCode} selected model: ${selectedModel}`);
+    
+    // קריאה למודל הנבחר
+    let result;
+    switch (selectedModel) {
+      case 'chatgpt':
+        result = await callChatGPT(prompt);
+        break;
+      case 'claude':
+        result = await callClaude(prompt);
+        break;
+      case 'gemini':
+        result = await callGemini(prompt);
+        break;
+      default:
+        console.log(`⚠️ Unknown model ${selectedModel}, falling back to ChatGPT`);
+        result = await callChatGPT(prompt);
+        break;
+    }
+    
+    // עדכון פעילות החדר
+    await roomRef.update({
+      'last_activity': admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`✅ AI response generated successfully using ${selectedModel}`);
+    return { 
+      result: result.text, 
+      model: result.modelName 
+    };
+    
+  } catch (error) {
+    console.error("❌ Error in askAI:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "Internal server error");
+  }
+});
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
-  
+/**
+ * פונקציית עזר לקריאה ל-ChatGPT
+ */
+async function callChatGPT(prompt) {
+  const apiKey = openaiApiKey.value();
+  if (!apiKey) {
+    throw new HttpsError("failed-precondition", "OpenAI API key not configured");
+  }
+
+  console.log("🤖 Calling ChatGPT...");
+
   const requestBody = JSON.stringify({
-    contents: [{parts: [{text: prompt}]}],
+    model: "gpt-4",
+    messages: [{
+      role: "user",
+      content: prompt
+    }],
+    max_tokens: 1000
   });
 
-  console.log("🔍 Making request to Gemini API...");
-
   return new Promise((resolve, reject) => {
-    const req = https.request(geminiUrl, {
+    const req = https.request("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {"Content-Type": "application/json"}
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      }
     }, (res) => {
-      console.log("📨 Response status:", res.statusCode);
+      console.log("📨 ChatGPT response status:", res.statusCode);
       
       let responseBody = "";
       res.on("data", (chunk) => responseBody += chunk);
       res.on("end", () => {
-        console.log("📨 Response received, parsing...");
-        
         try {
           const response = JSON.parse(responseBody);
           if (response.error) {
-            console.error("❌ Gemini API error:", response.error);
-            reject(new HttpsError("internal", `Gemini error: ${response.error.message}`));
+            console.error("❌ ChatGPT API error:", response.error);
+            reject(new HttpsError("internal", `ChatGPT error: ${response.error.message}`));
             return;
           }
           
-          const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
+          const text = response.choices?.[0]?.message?.content;
           if (!text) {
-            console.error("❌ Invalid response format:", response);
-            reject(new HttpsError("internal", "Invalid Gemini response format"));
+            console.error("❌ Invalid ChatGPT response format:", response);
+            reject(new HttpsError("internal", "Invalid ChatGPT response format"));
             return;
           }
           
-          console.log("✅ Success! Gemini response length:", text.length);
-          resolve({result: text, model: "gemini-pro"});
+          console.log("✅ ChatGPT response success, length:", text.length);
+          resolve({ text, modelName: "ChatGPT" });
         } catch (e) {
-          console.error("❌ Failed to parse response:", e);
-          console.error("❌ Raw response:", responseBody);
-          reject(new HttpsError("internal", "Failed to parse Gemini response"));
+          console.error("❌ Failed to parse ChatGPT response:", e);
+          reject(new HttpsError("internal", "Failed to parse ChatGPT response"));
         }
       });
     });
 
     req.on("error", (error) => {
-      console.error("❌ Request error:", error);
-      reject(new HttpsError("internal", "Failed to connect to Gemini"));
+      console.error("❌ ChatGPT request error:", error);
+      reject(new HttpsError("internal", "Failed to connect to ChatGPT"));
     });
 
     req.write(requestBody);
     req.end();
   });
-});
+}
 
 /**
- * Callable Cloud Function to get a response from Claude AI.
+ * פונקציית עזר לקריאה ל-Claude
  */
-exports.askClaude = onCall({
-  region: "me-west1"
-}, async (request) => {
-  console.log("🔍 askClaude called with:", request.data);
-  
-  if (!request.auth) {
-    console.error("❌ No authentication provided");
-    throw new HttpsError("unauthenticated", "Authentication required");
-  }
-
-  const prompt = request.data.prompt;
-  if (!prompt) {
-    console.error("❌ No prompt provided");
-    throw new HttpsError("invalid-argument", "Prompt is required");
-  }
-
-  const apiKey = process.env.CLAUDE_API_KEY;
+async function callClaude(prompt) {
+  const apiKey = claudeApiKey.value();
   if (!apiKey) {
-    console.error("❌ Claude API key not found");
     throw new HttpsError("failed-precondition", "Claude API key not configured");
   }
 
-  console.log("✅ Claude API key found, making request...");
+  console.log("🤖 Calling Claude...");
 
   const requestBody = JSON.stringify({
     model: "claude-3-sonnet-20240229",
@@ -143,8 +206,6 @@ exports.askClaude = onCall({
       let responseBody = "";
       res.on("data", (chunk) => responseBody += chunk);
       res.on("end", () => {
-        console.log("📨 Claude response received, parsing...");
-        
         try {
           const response = JSON.parse(responseBody);
           if (response.error) {
@@ -160,11 +221,10 @@ exports.askClaude = onCall({
             return;
           }
           
-          console.log("✅ Success! Claude response length:", text.length);
-          resolve({result: text, model: "claude-3-sonnet"});
+          console.log("✅ Claude response success, length:", text.length);
+          resolve({ text, modelName: "Claude" });
         } catch (e) {
           console.error("❌ Failed to parse Claude response:", e);
-          console.error("❌ Raw response:", responseBody);
           reject(new HttpsError("internal", "Failed to parse Claude response"));
         }
       });
@@ -178,191 +238,119 @@ exports.askClaude = onCall({
     req.write(requestBody);
     req.end();
   });
-});
+}
 
 /**
- * Callable Cloud Function to get a response from ChatGPT.
+ * פונקציית עזר לקריאה ל-Gemini
  */
-exports.askChatGPT = onCall({
-  region: "me-west1"
-}, async (request) => {
-  console.log("🔍 askChatGPT called with:", request.data);
-  
-  if (!request.auth) {
-    console.error("❌ No authentication provided");
-    throw new HttpsError("unauthenticated", "Authentication required");
-  }
-
-  const prompt = request.data.prompt;
-  if (!prompt) {
-    console.error("❌ No prompt provided");
-    throw new HttpsError("invalid-argument", "Prompt is required");
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY;
+async function callGemini(prompt) {
+  const apiKey = geminiApiKey.value();
   if (!apiKey) {
-    console.error("❌ OpenAI API key not found");
-    throw new HttpsError("failed-precondition", "OpenAI API key not configured");
+    throw new HttpsError("failed-precondition", "Gemini API key not configured");
   }
 
-  console.log("✅ OpenAI API key found, making request...");
+  console.log("🤖 Calling Gemini...");
 
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
   const requestBody = JSON.stringify({
-    model: "gpt-4",
-    messages: [{
-      role: "user",
-      content: prompt
-    }],
-    max_tokens: 1000
+    contents: [{parts: [{text: prompt}]}],
   });
 
   return new Promise((resolve, reject) => {
-    const req = https.request("https://api.openai.com/v1/chat/completions", {
+    const req = https.request(geminiUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      }
+      headers: {"Content-Type": "application/json"}
     }, (res) => {
-      console.log("📨 OpenAI response status:", res.statusCode);
+      console.log("📨 Gemini response status:", res.statusCode);
       
       let responseBody = "";
       res.on("data", (chunk) => responseBody += chunk);
       res.on("end", () => {
-        console.log("📨 OpenAI response received, parsing...");
-        
         try {
           const response = JSON.parse(responseBody);
           if (response.error) {
-            console.error("❌ OpenAI API error:", response.error);
-            reject(new HttpsError("internal", `OpenAI error: ${response.error.message}`));
+            console.error("❌ Gemini API error:", response.error);
+            reject(new HttpsError("internal", `Gemini error: ${response.error.message}`));
             return;
           }
           
-          const text = response.choices?.[0]?.message?.content;
+          const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!text) {
-            console.error("❌ Invalid OpenAI response format:", response);
-            reject(new HttpsError("internal", "Invalid OpenAI response format"));
+            console.error("❌ Invalid Gemini response format:", response);
+            reject(new HttpsError("internal", "Invalid Gemini response format"));
             return;
           }
           
-          console.log("✅ Success! OpenAI response length:", text.length);
-          resolve({result: text, model: "gpt-4"});
+          console.log("✅ Gemini response success, length:", text.length);
+          resolve({ text, modelName: "Gemini" });
         } catch (e) {
-          console.error("❌ Failed to parse OpenAI response:", e);
-          console.error("❌ Raw response:", responseBody);
-          reject(new HttpsError("internal", "Failed to parse OpenAI response"));
+          console.error("❌ Failed to parse Gemini response:", e);
+          reject(new HttpsError("internal", "Failed to parse Gemini response"));
         }
       });
     });
 
     req.on("error", (error) => {
-      console.error("❌ OpenAI request error:", error);
-      reject(new HttpsError("internal", "Failed to connect to OpenAI"));
+      console.error("❌ Gemini request error:", error);
+      reject(new HttpsError("internal", "Failed to connect to Gemini"));
     });
 
     req.write(requestBody);
     req.end();
   });
-});
+}
 
 /**
- * Universal AI function - automatically selects the best available model
+ * הפונקציות הישנות - עדיין נשארות לתאימות לאחור (אם צריך לבדיקות)
+ * אבל הClient לא אמור לקרוא להן ישירות יותר
  */
-exports.askAI = onCall({
-  region: "me-west1"
+exports.askGemini = onCall({
+  region: DEPLOY_REGION,
+  secrets: [geminiApiKey]
 }, async (request) => {
-  console.log("🔍 askAI called with:", request.data);
-  
-  if (!request.auth) {
-    console.error("❌ No authentication provided");
-    throw new HttpsError("unauthenticated", "Authentication required");
-  }
-
+  console.log("🔍 askGemini called directly (deprecated, use askAI instead)");
   const prompt = request.data.prompt;
-  const preferredModel = request.data.model || "auto";
-  
   if (!prompt) {
-    console.error("❌ No prompt provided");
     throw new HttpsError("invalid-argument", "Prompt is required");
   }
+  const result = await callGemini(prompt);
+  return { result: result.text, model: result.modelName };
+});
 
-  // Check which APIs are available
-  const hasGemini = !!process.env.GEMINI_API_KEY;
-  const hasClaude = !!process.env.CLAUDE_API_KEY;
-  const hasOpenAI = !!process.env.OPENAI_API_KEY;
-
-  console.log("🔍 Available models:", { hasGemini, hasClaude, hasOpenAI });
-
-  let selectedModel = preferredModel;
-  
-  // Auto-select model if requested or preferred model not available
-  if (preferredModel === "auto" || 
-      (preferredModel === "gemini" && !hasGemini) ||
-      (preferredModel === "claude" && !hasClaude) ||
-      (preferredModel === "chatgpt" && !hasOpenAI)) {
-    
-    if (hasGemini) selectedModel = "gemini";
-    else if (hasClaude) selectedModel = "claude";
-    else if (hasOpenAI) selectedModel = "chatgpt";
-    else {
-      console.error("❌ No AI services configured");
-      throw new HttpsError("failed-precondition", "No AI services configured");
-    }
+exports.askClaude = onCall({
+  region: DEPLOY_REGION,
+  secrets: [claudeApiKey]
+}, async (request) => {
+  console.log("🔍 askClaude called directly (deprecated, use askAI instead)");
+  const prompt = request.data.prompt;
+  if (!prompt) {
+    throw new HttpsError("invalid-argument", "Prompt is required");
   }
+  const result = await callClaude(prompt);
+  return { result: result.text, model: result.modelName };
+});
 
-  console.log("🎯 Selected model:", selectedModel);
-
-  // Call the appropriate function
-  try {
-    switch (selectedModel) {
-      case "gemini":
-        return await exports.askGemini(request);
-      case "claude":
-        return await exports.askClaude(request);
-      case "chatgpt":
-        return await exports.askChatGPT(request);
-      default:
-        throw new HttpsError("invalid-argument", "Invalid model selection");
-    }
-  } catch (error) {
-    console.error(`❌ ${selectedModel} failed, trying fallback:`, error);
-    
-    // If selected model fails, try fallback
-    const fallbacks = ["gemini", "claude", "chatgpt"].filter(m => 
-      m !== selectedModel && 
-      ((m === "gemini" && hasGemini) || 
-       (m === "claude" && hasClaude) || 
-       (m === "chatgpt" && hasOpenAI))
-    );
-    
-    if (fallbacks.length > 0) {
-      const fallback = fallbacks[0];
-      console.log(`🔄 Using fallback model: ${fallback}`);
-      
-      switch (fallback) {
-        case "gemini":
-          return await exports.askGemini(request);
-        case "claude":
-          return await exports.askClaude(request);
-        case "chatgpt":
-          return await exports.askChatGPT(request);
-      }
-    }
-    
-    throw error;
+exports.askChatGPT = onCall({
+  region: DEPLOY_REGION,
+  secrets: [openaiApiKey]
+}, async (request) => {
+  console.log("🔍 askChatGPT called directly (deprecated, use askAI instead)");
+  const prompt = request.data.prompt;
+  if (!prompt) {
+    throw new HttpsError("invalid-argument", "Prompt is required");
   }
+  const result = await callChatGPT(prompt);
+  return { result: result.text, model: result.modelName };
 });
 
 /**
  * Scheduled function to clean up old classrooms.
  * Runs every day at 2:00 AM Israel time.
- * NOTE: Uses europe-west1 because Cloud Scheduler is not available in me-west1
  */
 exports.cleanupOldClassrooms = onSchedule({
   schedule: "0 2 * * *",
   timeZone: "Asia/Jerusalem",
-  region: "europe-west1"  // Changed from me-west1 due to Cloud Scheduler limitations
+  region: DEPLOY_REGION
 }, async (event) => {
   console.log("🧹 Starting cleanup of old classrooms...");
   
